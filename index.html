@@ -533,6 +533,30 @@
         </div>
     </div>
 
+    <!-- MODAL OTORISASI ADMIN -->
+    <div id="modalOtorisasiAdmin" class="fixed inset-0 bg-slate-900/60 z-[200] hidden flex justify-center items-center backdrop-blur-sm p-4">
+        <div id="modalOtorisasiAdminContent" class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-[400px] modal-enter border border-slate-100 flex flex-col text-center">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-rose-50 mb-4 border-4 border-white shadow-sm relative -top-10">
+                <i class="fas fa-user-shield text-2xl text-rose-500"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2 -mt-6">Otorisasi Admin</h3>
+            <p class="text-xs text-slate-500 mb-6">Tindakan ini memerlukan konfirmasi keamanan dari akun Administrator.</p>
+            <form onsubmit="prosesOtorisasiAdmin(event)" class="space-y-4 text-left">
+                <div>
+                    <label class="form-label text-xs font-bold text-slate-600">Username Admin</label>
+                    <div class="relative">
+                        <i class="fas fa-lock absolute left-3.5 top-3 text-slate-400"></i>
+                        <input type="text" id="input_admin_auth" required class="form-input pl-10 font-bold text-rose-600 focus:border-rose-500" placeholder="Ketik username admin..." autocomplete="off">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="sembunyikanModal('modalOtorisasiAdmin', 'modalOtorisasiAdminContent')" class="px-4 py-2 border border-slate-300 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 transition w-1/2">Batal</button>
+                    <button type="submit" id="btnProsesOtorisasi" class="px-4 py-2 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 hover:shadow-lg transition w-1/2 flex justify-center items-center">Konfirmasi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- NAVBAR PREMIUM -->
     <nav class="shrink-0 bg-gradient-brand text-white shadow-lg z-50 border-b border-teal-800/50">
         <div class="w-full flex justify-between items-center px-4 md:px-6">
@@ -659,8 +683,8 @@
                     </div>
                     
                     <!-- NEW EXPORT / IMPORT BUTTONS -->
-                    <button onclick="exportDataPasien()" class="px-3 py-1.5 bg-white border border-slate-200 text-teal-600 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm" title="Download Data Pasien (CSV)"><i class="fas fa-download"></i></button>
-                    <button onclick="document.getElementById('importFileInput').click()" class="px-3 py-1.5 bg-white border border-slate-200 text-orange-500 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm" title="Upload Data Pasien (CSV)"><i class="fas fa-upload"></i></button>
+                    <button onclick="mintaOtorisasiAdmin('export')" class="px-3 py-1.5 bg-white border border-slate-200 text-teal-600 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm" title="Download Data Pasien (CSV)"><i class="fas fa-download"></i></button>
+                    <button onclick="mintaOtorisasiAdmin('import')" class="px-3 py-1.5 bg-white border border-slate-200 text-orange-500 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm" title="Upload Data Pasien (CSV)"><i class="fas fa-upload"></i></button>
                     <!-- Hidden File Input untuk Import CSV -->
                     <input type="file" id="importFileInput" accept=".csv" class="hidden" onchange="prosesImportCSV(event)">
                     <!-- END NEW BUTTONS -->
@@ -1285,6 +1309,73 @@
             if (view === 'laporan_kunjungan') renderLaporanKunjungan();
             if (view === 'laporan_keuangan') renderLaporanKeuangan();
             if (view === 'pengaturan') fetchPetugasKePengaturan();
+        }
+
+        // ======================= FITUR OTORISASI ADMIN =======================
+        let pendingAdminAction = null;
+
+        function mintaOtorisasiAdmin(action) {
+            // Membuka modal konfirmasi keamanan ulang
+            pendingAdminAction = action;
+            document.getElementById('input_admin_auth').value = '';
+            tampilModal('modalOtorisasiAdmin', 'modalOtorisasiAdminContent');
+            setTimeout(() => document.getElementById('input_admin_auth').focus(), 300);
+        }
+
+        async function prosesOtorisasiAdmin(e) {
+            e.preventDefault();
+            const username = document.getElementById('input_admin_auth').value.trim();
+            if(!username) return;
+
+            const btn = document.getElementById('btnProsesOtorisasi');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            let isAdmin = false;
+
+            if (supabaseClient) {
+                try {
+                    const { data, error } = await supabaseClient
+                        .from('petugas')
+                        .select('role')
+                        .ilike('username', username)
+                        .maybeSingle();
+
+                    if (error) throw error;
+                    if (data && data.role === 'admin') {
+                        isAdmin = true;
+                    }
+                } catch (err) {
+                    showToast('Gagal memverifikasi admin: ' + err.message, 'error');
+                }
+            } else {
+                // Fallback Mode Lokal
+                if (username.toLowerCase() === 'admin') {
+                    isAdmin = true;
+                } else {
+                    const user = petugasDataGlobal.find(p => p.username.toLowerCase() === username.toLowerCase());
+                    if (user && user.role === 'admin') isAdmin = true;
+                }
+            }
+
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+
+            if (isAdmin) {
+                showToast('Otorisasi Admin Berhasil!', 'success');
+                sembunyikanModal('modalOtorisasiAdmin', 'modalOtorisasiAdminContent');
+                
+                // Lanjutkan action yang tertunda (Export / Import)
+                if (pendingAdminAction === 'export') {
+                    exportDataPasien();
+                } else if (pendingAdminAction === 'import') {
+                    document.getElementById('importFileInput').click();
+                }
+                pendingAdminAction = null;
+            } else {
+                showToast('Otorisasi Ditolak! Akun tidak ditemukan / bukan Admin.', 'error');
+            }
         }
 
         // ======================= FITUR BARU EXPORT & IMPORT =======================
